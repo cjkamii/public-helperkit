@@ -13,7 +13,6 @@ if not _result then error("ModuleErr: 'crypto_lua' does not exist.") end
 local http = require('socket.http')
 local https = require('ssl.https')
 local ltn12 = require('ltn12')
-local socket = require('socket')
 local url = require('socket.url')
 
 local events = require('samp.events')
@@ -42,20 +41,6 @@ local ToScreen = convertGameScreenCoordsToWindowScreenCoords
 local sX, sY = ToScreen(630, 438)
 local message = {}
 local IsNotifActive = false
-local notfList = {
-    pos = {
-        x = sX,
-        y = sY
-    },
-    npos = {
-        x = sX,
-        y = sY
-    },
-    size = {
-        x = 200,
-        y = 200
-    }
-}
 
 local dictPath = 'moonloader\\config\\helper-kit\\dict.json'
 local dict = {}
