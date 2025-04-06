@@ -13,6 +13,7 @@ if not _result then error("ModuleErr: 'crypto_lua' does not exist.") end
 local http = require('socket.http')
 local https = require('ssl.https')
 local ltn12 = require('ltn12')
+local socket = require('socket')
 local url = require('socket.url')
 
 local events = require('samp.events')
@@ -88,6 +89,8 @@ local IsSelectedDict = imgui.ImBool(false)
 local helpRequests = {}
 local HelperRole = ""
 local HelperRoster = {}
+local HasHelperRosterLoaded = false
+local HasHelperStatsLoaded = false
 local desc = ""
 
 local time = 0
@@ -182,7 +185,7 @@ function isPlayerWhitelisted(helperList)
     
     for _, roleGroup in ipairs(helperList) do
         for _, helperName in ipairs(roleGroup.members) do
-            local normalizedHelperName = helperName:gsub("_", " "):lower():gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+            local normalizedHelperName = helperName.name:gsub("_", " "):lower():gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
             
             if normalizedHelperName == playerName:lower() then
                 return true, roleGroup.role
@@ -308,7 +311,6 @@ function extractHelperRoster(htmlContent)
         local roleSection = htmlContent:match(roleData.pattern)
         
         if roleSection then
-            
             if roleData.role == "Helper Management" then
                 for liBlock in roleSection:gmatch('<li[^>]*>(.-)</li>') do
                     local color, name = liBlock:match('<font color="(#%x+)">(.-)</font>')
@@ -319,7 +321,11 @@ function extractHelperRoster(htmlContent)
                                            roleData.specialRoles[color] or
                                            "Helper Manager"
                         
-                        table.insert(extractedHelpers[specificRole], name)
+                        local member = {
+                            name = name,
+                            stats = ""
+                        }
+                        table.insert(extractedHelpers[specificRole], member)
                     end
                 end
             else
@@ -332,12 +338,16 @@ function extractHelperRoster(htmlContent)
                     name = name:gsub("^%s+", ""):gsub("%s+$", ""):gsub("_", " ")
                     
                     if name and name ~= "" then
-                        table.insert(extractedHelpers[roleData.role], name)
+                        local member = {
+                            name = name,
+                            stats = ""
+                        }
+                        table.insert(extractedHelpers[roleData.role], member)
                     end
                 end
             end
         end
-    end
+    end    
 
     local formattedHelpers = {}
     for roleName, helpers in pairs(extractedHelpers) do
@@ -1107,7 +1117,7 @@ function imgui.OnDrawFrame()
         imgui.PushStyleColor(imgui.Col.Border, imgui.ImVec4(0, 0, 0, 0))
     
         imgui.SetNextWindowPos(imgui.ImVec2(rightPosition - notifWidth - 10, screenHeight / 2 - 150), imgui.Cond.Always)
-        imgui.SetNextWindowSize(imgui.ImVec2(notifWidth + 20, 300)) 
+        imgui.SetNextWindowSize(imgui.ImVec2(notifWidth + 20, 600)) 
     
         imgui.Begin("##notif_container", nil, imgui.WindowFlags.NoTitleBar + imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoScrollbar)
     
@@ -1118,23 +1128,23 @@ function imgui.OnDrawFrame()
             local push = false
             local fadeDuration = 2.0
     
-            if v.active and (v.time < currentTime) then
+            if v.active and (currentTime >= v.time) then
                 v.active = false
-                v.fadeStart = currentTime 
+                v.fadeStart = currentTime
             end
     
             local alpha = 1.0
             if v.fadeStart then
                 local fadeElapsed = currentTime - v.fadeStart
-                alpha = math.max(0, 1 - (fadeElapsed / fadeDuration))
-    
+                alpha = math.max(0, 1 - (fadeElapsed / v.fadeDuration))
+            
                 if alpha <= 0 then
                     table.remove(message, k)
                     goto continue
                 end
             end
     
-            if count < 3 then
+            if count < 4 then
                 if v.active or v.fadeStart then
                     count = count + 1
     
@@ -1168,6 +1178,8 @@ function imgui.OnDrawFrame()
                     imgui.SetCursorPosY(imgui.GetCursorPosY() + margin)
 
                     local allowedRoles = {
+                        ["Whitelisted"] = false,
+                        ["Junior Helper"] = false,
                         ["Senior Helper"] = true,
                         ["Head Helper"] = true,
                         ["Helper Manager"] = true,
@@ -1184,7 +1196,6 @@ function imgui.OnDrawFrame()
                             "^(.-)%s*%(%s*ID%s*:%s*(%d+)%s*%)%s*(.+)$"
                         }
                     
-                        -- Match patterns in order
                         for _, pattern in ipairs(patterns) do
                             name, id, message = nText:match(pattern)
                             if name then break end
@@ -1199,18 +1210,20 @@ function imgui.OnDrawFrame()
                             local windowWidth = imgui.GetContentRegionAvail().x
                             local buttonWidth, spacing = 50, 15
                             local totalWidth = (buttonWidth * 2) + spacing
-                        
+                            local topMargin = 5
+                    
+                            imgui.SetCursorPosY(imgui.GetCursorPosY() + topMargin) 
                             imgui.SetCursorPosX((windowWidth - totalWidth) / 2)
-                        
+                    
                             if imgui.Button(u8("Accept"), imgui.ImVec2(buttonWidth, 20)) then
                                 addNotification(string.format("You have accepted %s's (ID:%d) Help request.", name, id), nil, 5)
                                 sampSendChat("/accepthelp " .. id)
                                 helpRequests[requestKey].IsStatus = true
                                 helpRequests[requestKey].isHandled = true
                             end
-                        
+                    
                             imgui.SameLine(0, spacing)
-                        
+                    
                             if imgui.Button(u8("Trash"), imgui.ImVec2(buttonWidth, 20)) then
                                 addNotification(string.format("You have trashed %s's (ID:%d) Help request.", name, id), nil, 5)
                                 sampSendChat("/trashhelp " .. id)
@@ -1218,7 +1231,22 @@ function imgui.OnDrawFrame()
                                 helpRequests[requestKey].isHandled = true
                             end
                         end
-                    end
+                    
+                    elseif v.type == "Update" then
+                        local buttonWidth = 100
+                        local buttonHeight = 20
+                        local availableWidth = imgui.GetContentRegionAvail().x
+                        local topMargin = 5
+                    
+                        imgui.SetCursorPosY(imgui.GetCursorPosY() + topMargin)
+                        imgui.SetCursorPosX((availableWidth - buttonWidth) / 2)
+                    
+                        if imgui.Button("Update Now##UpdateConfirm", imgui.ImVec2(buttonWidth, buttonHeight)) then
+                            imgui.ShowCursor = false
+                            local update_available, version_or_error, changelog = checkUpdate()
+                            performUpdate(version_or_error, changelog)
+                        end
+                    end                                     
 
                     imgui.Dummy(imgui.ImVec2(1, margin))
 
@@ -1246,10 +1274,14 @@ function imgui.OnDrawFrame()
     
     if not Settings.Visible.Main.v then
         imgui.ShowCursor = false
+        HasHelperRosterLoaded = false
+        HasHelperStatsLoaded = false
     end
     if not Settings.Visible.SelectedWindow.v then
         SelectedSettings.Tab = 0
         Settings.Visible.SelectedWindow = imgui.ImBool(false)
+        HasHelperRosterLoaded = false
+        HasHelperStatsLoaded = false
     end
     if Settings.Visible.Main.v then
         if SelectedSettings.Tab == 0 then
@@ -1294,6 +1326,11 @@ function imgui.OnDrawFrame()
                 if imgui.Selectable(ti.ICON_ARTBOARD, SelectedSettings.Tab == 6, imgui.ImGuiSelectableFlags_DontClosePopups) then
                     SelectedSettings.Tab = 6
                     Settings.Visible.SelectedWindow = imgui.ImBool(true)
+                    HasHelperRosterLoaded = true
+                    if not HasHelperStatsLoaded then
+                        sampSendChat("/helpers")
+                        HasHelperStatsLoaded = true
+                    end
                 end imgui.SameLine(0, 0) imgui.Text(" Helper Roster")
 
                 local PlayerName = getPlayerNameSafe()
@@ -1686,6 +1723,8 @@ function imgui.OnDrawFrame()
                 if imgui.Button(u8("<< Back##")) then
                     SelectedSettings.Tab = 0
                     Settings.Visible.SelectedWindow = imgui.ImBool(false)
+                    HasHelperRosterLoaded = false
+                    HasHelperStatsLoaded = false
                 end
                 imgui.TextColored(imgui.ImVec4(1.0, 1.0, 1.0, 1.0), "Helper Roster")
                 imgui.BeginChild("HelperRoster", imgui.ImVec2(0, 0), true)
@@ -1700,49 +1739,52 @@ function imgui.OnDrawFrame()
                     "Junior Helper"
                 }
                 
-                for _, roleName in ipairs(roleOrder) do
-                    for _, roster in pairs(HelperRoster) do
-                        if roster.role == roleName and #roster.members > 0 then
-                            imgui.TextColored(imgui.ImVec4(0.2, 0.8, 1.0, 1.0), roster.role .. " (" .. roster.count .. ")")
-
-                            for _, helperName in ipairs(roster.members) do
-                                if roster.role == "Director" then
-                                    imgui.TextColored(imgui.ImVec4(1.0, 0.0, 0.0, 1.0), helperName)
-                                elseif roster.role == "Assistant Director" then
-                                    imgui.TextColored(imgui.ImVec4(1.0, 0.0, 0.0, 1.0), helperName)
-                                else
-                                    local playerName = getPlayerNameSafe()
-                                    local isOnline = false
-                                    local isYou = (helperName == playerName)
-                                    
-                                    if isYou then
-                                        imgui.TextColored(imgui.ImVec4(0.2, 0.8, 1.0, 1.0), helperName .. " (You)")
+                if HasHelperRosterLoaded then
+                    for _, roleName in ipairs(roleOrder) do
+                        for _, roster in pairs(HelperRoster) do
+                            if roster.role == roleName and #roster.members > 0 then
+                                imgui.TextColored(imgui.ImVec4(0.2, 0.8, 1.0, 1.0), roster.role .. " (" .. roster.count .. ")")
+    
+                                for _, helperData in ipairs(roster.members) do
+                                    local helperName = helperData.name
+                                    local helperStats = helperData.stats
+                                    if roster.role == "Director" then
+                                        imgui.TextColored(imgui.ImVec4(1.0, 0.0, 0.0, 1.0), helperName)
+                                    elseif roster.role == "Assistant Director" then
+                                        imgui.TextColored(imgui.ImVec4(1.0, 0.0, 0.0, 1.0), helperName)
                                     else
-                                        for id = 0, sampGetMaxPlayerId(false) do
-                                            if sampIsPlayerConnected(id) then
-                                                local nick = sampGetPlayerNickname(id)
-                                                if nick then
-                                                    local normalizedPlayerName = nick:gsub("_", " "):gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
-                                                    if normalizedPlayerName == helperName then
-                                                        isOnline = true
-                                                        break
+                                        local playerName = getPlayerNameSafe()
+                                        local isOnline = false
+                                        local isYou = (helperName == playerName)
+                                        
+                                        if isYou then
+                                            imgui.TextColored(imgui.ImVec4(0.2, 0.8, 1.0, 1.0), helperName) imgui.SameLine(0, 0) if helperStats then imgui.TextColored(imgui.ImVec4(1.0, 1.0, 1.0, 1.0), " " .. helperStats) end imgui.SameLine(0, 0) imgui.TextColored(imgui.ImVec4(0.2, 0.8, 1.0, 1.0), " (You)")
+                                        else
+                                            for id = 0, sampGetMaxPlayerId(false) do
+                                                if sampIsPlayerConnected(id) then
+                                                    local nick = sampGetPlayerNickname(id)
+                                                    if nick then
+                                                        local normalizedPlayerName = nick:gsub("_", " "):gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+                                                        if normalizedPlayerName == helperName then
+                                                            isOnline = true
+                                                            break
+                                                        end
                                                     end
                                                 end
                                             end
-                                        end
-                                        
-                                        if isOnline then
-                                            imgui.Text(u8(helperName)) imgui.SameLine(0, 0)
-                                            imgui.TextColored(imgui.ImVec4(0.0, 1.0, 0.0, 1.0), " (Online)")
-                                        else
-                                            imgui.Text(u8(helperName))
+                                            
+                                            if isOnline then
+                                                imgui.TextColored(imgui.ImVec4(0.0, 1.0, 0.0, 1.0), helperName) imgui.SameLine(0, 0) if helperStats then imgui.TextColored(imgui.ImVec4(1.0, 1.0, 1.0, 1.0), " " .. helperStats) end imgui.SameLine(0, 0) imgui.TextColored(imgui.ImVec4(0.0, 1.0, 0.0, 1.0), " (Online)")                
+                                            else
+                                                imgui.TextColored(imgui.ImVec4(0.6, 0.5, 0.5, 1.0), helperName)
+                                            end
                                         end
                                     end
                                 end
+                                
+                                imgui.Separator()
+                                imgui.Spacing()
                             end
-                            
-                            imgui.Separator()
-                            imgui.Spacing()
                         end
                     end
                 end
@@ -2219,6 +2261,7 @@ function removeHexColors(text)
 end
 
 function sampev.onServerMessage(color, text)
+    --print("Color: " .. color .. " Text: " .. text)
     if color == -1446714113 and text == "Establishing connection to the {FFA500}Horizon Roleplay {A9C4E4}database - please wait a moment..." then
 
     end
@@ -2266,7 +2309,7 @@ function sampev.onServerMessage(color, text)
 
                 if helpRequests[key].notification == false then
                     helpRequests[key].notification = true
-                    addNotification(string.format("%s (ID:%s) has requested help! Message: %s", name, id, message), "Helprequest", 5)
+                    addNotification(string.format("%s (ID:%s) has requested help! Message: %s", name, id, message), "Helprequest", 10)
                 end
             else
                 helpRequests[key].message = message
@@ -2275,15 +2318,43 @@ function sampev.onServerMessage(color, text)
             updateHelpRequests()
         end
     end
-    
-end
 
-function sampev.onSendCommand(cmd)
-    if cmd == "/helprequests" then
-        safeCall(function ()
-            updateHelpRequests()
-        end)
+    if color == -5963606 and (text == "_____________________________________________________" or text == "Helpers Online:") then
+        if HasHelperStatsLoaded then
+            return false
+        end
     end
+
+    if color == 869072810 and not HasHelperRoster then
+        local role, name, requests, tours = text:match("^(.- Helper) (.-) {%x+}| {%x+}Requests Accepted: {%x+}(%d+) | {%x+}Tours: {%x+}(%d+)")
+        local jrole, jname, chats = text:match("^(Junior Helper) (.-) {%x+}| {%x+}Newbie Chats: {%x+}(%d+)")
+    
+        local function updateHelperName(roleToFind, nameToUpdate, statText)
+            for _, group in ipairs(HelperRoster) do
+                if group.role == roleToFind then
+                    for i, member in ipairs(group.members) do
+                        if member.name == nameToUpdate then
+                            member.stats = statText
+                            return true
+                        end
+                    end
+                end
+            end
+            return false
+        end        
+    
+        if role and name and requests and tours then
+            updateHelperName(role, name, string.format("| Requestes: %s | Tours: %s |", requests, tours))
+        elseif jrole and jname and chats then
+            updateHelperName(jrole, jname, string.format("| Newbie Chats: %s |", chats))
+        elseif text:match("^_+$") then
+            HasHelperRoster = true
+        end
+
+        if HasHelperStatsLoaded then
+            return false
+        end
+    end      
 end
 
 function updateHelpRequests()
@@ -2315,17 +2386,21 @@ function sampev.onShowTextDraw(id, data)
 end
 
 function addNotification(text, type, duration)
+    local showtime = duration or 5
     table.insert(message, {
         text = text,
         type = type,
-        showtime = duration or 5,
-        time = os.clock() + (duration or 5),
+        showtime = showtime,
+        time = os.clock() + showtime,
+        fadeStart = nil, 
+        fadeDuration = 2.0, 
         active = true
     })
     IsNotifActive = true
     local cx, cy, cz = getCharCoordinates(PLAYER_PED)
     addOneOffSound(cx, cy, cz, 1139)
 end
+
 
 function refreshconfigspath()
     local function loadConfig(path)
@@ -2359,7 +2434,7 @@ function main()
 
     local update_available, version_or_error, changelog = checkUpdate()
     if update_available then
-        addNotification(string.format("There's an update available to v%s", version_or_error), "Update", 5)
+        addNotification(string.format("There's an update available to v%s", version_or_error), "Update", 30)
     end
 
     local PlayerName = getPlayerNameSafe()
@@ -2448,7 +2523,7 @@ function main()
             notification = false
         }
     
-        addNotification(string.format("%s (ID:%s) has requested a help! message: %s", helpRequests[key].name, helpRequests[key].id, helpRequests[key].message), "Helprequest", 5)
+        addNotification(string.format("%s (ID:%s) has requested a help! message: %s", helpRequests[key].name, helpRequests[key].id, helpRequests[key].message), "Helprequest", 10)
     end)
 
     sampRegisterChatCommand('reloadhk', function()
@@ -2466,7 +2541,9 @@ function main()
             wait(5000)  
             if not isLoadingInterior and helprequsttimer <= localClock() - last_request then
                 last_request = localClock()
-                updateHelpRequests()
+                pcall(function()
+                    updateHelpRequests()
+                end)
             end
         end
     end)
@@ -2474,6 +2551,7 @@ function main()
     lua_thread.create(function()
         while true do
             wait(5000)
+    
             for key, request in pairs(helpRequests) do
                 if request.isHandled then
                     helpRequests[key] = nil
