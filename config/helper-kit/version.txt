@@ -1,0 +1,22 @@
+VERSION = 2.7
+UPDATE = true
+CHANGELOG:
+Version 2.7:
+    - Fixed Auto-Updater at Main function
+    - Fixed Notification once updated
+    - Fixed the Menu not being displayed after the update
+    - Added Lvl Calculator on the Menu
+    - Added reload script command
+    - Changes on Helper Roster
+        - Added Status
+        - Added Online Counter
+        - Improve Extraction (Q&A Moderator are now Included)
+        - Fixed Online Status
+        - Added "Suspended" Tag on the Helper Roster
+        - Fixed the FPS Drop Issue on the Roster
+        - Chaned the priority Status of "You" to be the first "Online" the second and rest is "Offline"
+    - Fixed Minor Bugs
+
+Version 2.6:
+    - Initial release of Helper Roster
+    - Basic Auto-Updater System added
