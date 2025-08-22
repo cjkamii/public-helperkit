@@ -1,0 +1,41 @@
+{
+  "v2.8.23a": [
+    "Adjusted Configurations ( Added Enable option / Indicator )",
+    "Adjusted Changelogs",
+    "Added Notifications Moving Position"
+  ],
+  "v2.8.1a": [
+    "Added fastquit function ( Easier to quit the game )",
+    "Adjusted Helper Roster",
+    "Fixed Accessibility of roles",
+    "Added User Configuration",
+    "Added Visibility of Menu list tabs",
+    "Added Configuration of Notifications",
+    "Toggle Notification",
+    "Toggle Notification Sound",
+    "Added Duration",
+    "Added Count per Notifications (Exg: 2 - 5 shown notifications at the side )",
+    "Fixed Helper Management Accessibility",
+    "Fixed Minor Bugs"
+  ],
+  "v2.7.125a": [
+    "Fixed Auto-Updater at Main function",
+    "Fixed Notification once updated",
+    "Fixed the Menu not being displayed after the update",
+    "Added Lvl Calculator on the Menu",
+    "Added reload script command",
+    "Changes on Helper Roster",
+    "Added Status",
+    "Added Online Counter",
+    "Improved Extraction (Q&A Moderator are now Included)",
+    "Fixed Online Status",
+    "Added 'Suspended' Tag on the Helper Roster",
+    "Fixed the FPS Drop Issue on the Roster",
+    "Changed the priority Status of 'You' to be the first 'Online' the second and rest is 'Offline'",
+    "Fixed Minor Bugs"
+  ],
+  "v2.6": [
+    "Initial release of Helper Roster",
+    "Basic Auto-Updater System added"
+  ]
+}
